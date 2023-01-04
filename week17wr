@@ -1,0 +1,58 @@
+install.packages("nflfastR")
+install.packages("nflplotR")
+install.packages("nflreadr")
+install.packages("RColorBrewer")
+install.packages("ggtext")
+install.packages("ggimage")
+
+library(tidyverse)
+library(nflfastR)
+library(nflplotR)
+library(nflreadr)
+library(RColorBrewer)
+library(ggtext)
+library(ggplot2)
+library(ggimage)
+library(plotly)
+
+
+
+# Pulling initial data and initial filtering 
+playerstats <- load_player_stats()
+nfl_wr <- playerstats %>% 
+  filter(position == "WR" & week==17)
+nfl_teams <- teams_colors_logos
+
+# Further filtering and simplifying dataset
+wr_plot_data <- nfl_wr %>% 
+  filter(receiving_yards>70) %>% 
+  select(headshot_url,player_name,player_display_name,recent_team,receptions,
+         targets,receiving_yards,receiving_air_yards) %>% 
+  inner_join(teams_colors_logos %>% 
+               select(team_abbr, team_nick), by = c("recent_team"="team_abbr")) %>% 
+  mutate(ydsperrec = receiving_yards/receptions) %>% 
+  mutate(airydsperrec = receiving_air_yards/receptions) %>% 
+  mutate(airydspertar = receiving_air_yards/targets)
+
+
+# Plot   
+plot <- ggplot(wr_plot_data, aes(airydspertar,ydsperrec))+
+  geom_point()+
+  xlim(0,30)+
+  ylim(0,40)+
+  geom_image(aes(image = headshot_url), size=0.14)+
+  theme_minimal()+
+  labs(title = "Week 17 Receiving Stats", 
+       subtitle = "Big-Play & Deep-Threat Efficiency Among Receivers with 70+ Receiving Yards")+
+  labs(x="Air Yards Per Target",y="Yards Per Reception")+
+  labs(caption="Data: nflfastR  |  Graphic: @Chris-HP1")+
+  theme(plot.title = element_text(hjust =0.5))+
+  theme(plot.title = element_text(face = "bold"))+
+  theme(plot.subtitle = element_text(hjust=0.5))+
+  theme(axis.title.x = element_text(face = "bold"))+
+  theme(axis.title.y = element_text(face = "bold"))
+
+plot
+
+ggsave("week172022wr.png",plot,
+       height = 6, width = 8, units = "in", dpi = 350)
