@@ -1,0 +1,85 @@
+# load packages
+library(gganimate)
+library(tidyverse)
+library(nflfastR)
+library(nflplotR)
+library(nflreadr)
+library(ggimage)
+library(ggthemes)
+library(espnscrapeR)
+library(purrr)
+library(ggtext)
+library(extrafont)
+
+
+# collect data; play-by-play stats for entire 2022 season 
+data <- load_player_stats()
+
+# team logo data
+nfl_team <- teams_colors_logos
+
+# filter data for QBs and relevant stats
+# selected only the four QBs with the highest odds for MVP
+nflqb <- data %>% 
+  filter(position=="QB" & recent_team %in%c("KC","CIN","PHI","BUF") &
+           player_id %in% c("00-0033873","00-0034857","00-0036389","00-0036442"))
+
+# scrape QBR data from ESPN for weeks 1-18 using espnscrapeR
+# test to make sure it's scraping as intended 
+get_nfl_qbr("2022", week = 12)
+
+raw_qbr <- 1:18 %>% 
+  map_dfr(.f = ~espnscrapeR::get_nfl_qbr("2022", week = .x))
+
+# need to add QBR data to nflqb dataframe 
+# before we can execute the join, need to adjust some column names 
+raw_qbr <- rename(raw_qbr, c("player_display_name" = "name_display"))
+raw_qbr <- rename(raw_qbr, c("week" = "game_week"))
+
+# joining on the basis of player_display_name and week
+new_qb <- left_join(nflqb, raw_qbr, by=c("player_display_name"="player_display_name",
+                                         "week"="week"))
+
+# QBR data from ESPN is week-to-week; need a rolling average 
+average_qbr <- new_qb %>% 
+  group_by(player_display_name) %>% 
+  mutate(avg_qbr = cummean(qbr_total),
+         week = as.double(week)) %>% 
+  ungroup()
+
+# left join to add team color 
+average_qbr <- left_join(average_qbr, nfl_team, by=c("recent_team"="team_abbr"))
+
+# time to plot
+weeklyQBR <- average_qbr %>% 
+  ggplot(aes(week,avg_qbr, group = player_display_name))+
+  geom_segment(aes(xend = 15, yend = avg_qbr), linetype = 2, color = 'grey') +
+  geom_line(aes(color = team_color), alpha = 0.7, size = 2) +
+  geom_image(aes(image = headshot_url), size = 0.1, by = "width", asp=1.5) +
+  scale_color_identity(aesthetics = c("color", "fill")) +
+  ggthemes::theme_fivethirtyeight() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    legend.position = "none",
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  ) +
+  scale_x_continuous(breaks = seq(0, 18, 1)) +
+  coord_cartesian(clip = "off") + 
+  transition_reveal(week) + 
+  labs(title = 'Total QBR by Week for MVP Frontrunners - 2022',
+       subtitle = "DraftKings Odds: Mahomes -1600 | Burrow +900 | Hurts +1500 | Allen +1500",
+       x = "",
+       y = "QBR",
+       caption = "Data: ESPN | Graphic: Chris Hilsinger-Pate")+
+  theme(
+    axis.text = element_text(family = "Geneva", face = "bold"),
+    axis.title = element_text(family = "Geneva", face = "bold"),
+    plot.title = element_text(family = "Geneva", face = "bold")
+  )
+
+weeklyQBR  
+  
+
+animate(weeklyQBR, height = 1000, width = 1000, fps = 20, duration = 20, end_pause = 10)
+anim_save("MVPrace.gif")
